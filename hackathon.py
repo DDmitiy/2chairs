@@ -1,6 +1,33 @@
 from flask import Flask, jsonify, send_file, request
-from models import Company, Furniture
+from models import Company, Furniture, User
 from uuid import uuid4
+from hashlib import md5
+import jwt
+import datetime
+
+TOKEN_EXPIRED = 0
+TOKEN_INVALID = 1
+
+
+def encode_token(username):
+    payload = {
+        'username': username
+    }
+    return jwt.encode(
+        payload,
+        app.config.get('SECRET_KEY'),
+        algorithm='HS256'
+    )
+
+
+def decode_token(token):
+    try:
+        payload = jwt.decode(token, app.config.get('SECRET_KEY'), algorithms='HS256')
+    except jwt.ExpiredSignatureError:
+        return TOKEN_EXPIRED
+    except jwt.InvalidTokenError:
+        return TOKEN_INVALID
+    return payload['username']
 
 
 def create_app():
@@ -36,13 +63,19 @@ def get_company(name):
 
 
 @app.route('/company', methods=['POST'])
-def post_company():
+def create_company():
     json = request.get_json()
-    comp = Company(name=json['name'])
-    comp.mail = json['mail']
-    comp.cities = json['cities']
-    comp.save()
-    return ''
+    token = json['token']
+    username = decode_token(token)
+    user = User.objects(username=username).first()
+    if user.is_admin:
+        comp = Company(name=json['name'])
+        comp.mail = json['mail']
+        comp.cities = json['cities']
+        comp.save()
+        return ''
+    else:
+        return '', 403
 
 
 @app.route('/furniture', methods=['GET'])
@@ -95,6 +128,19 @@ def post_furniture():
     })
 
 
+@app.route('/furniture/<uuid:_id>', methods=['DELETE'])
+def delete_furniture(_id):
+    json = request.get_json()
+    token = json['token']
+    username = decode_token(token)
+    user = User.objects(username=username).first()
+    company = Company.objects(name=json['company']).first()
+    if company.
+    furn = Furniture.objects(uuid=id).first()
+    furn.delete()
+    return ''
+
+
 @app.route('/furniture/<uuid:_id>/texture', methods=['GET'])
 def furniture_texture(_id):
     furn = Furniture.objects(uuid=_id).first()
@@ -111,6 +157,44 @@ def furniture_photo(_id):
     return send_file(photo, mimetype=photo.content_type,
                      attachment_filename=photo.filename,
                      as_attachment=True)
+
+
+@app.route('/user', methods=['POST'])
+def create_user():
+    json = request.get_json()
+    username = json['username']
+    password = json['password']
+    mail = json['mail']
+    user = User(username=username)
+    password = md5(password.encode('utf-8')).hexdigest()
+    user.password = password
+    user.mail = mail
+    user.is_admin = False
+    user.save()
+    return encode_token(username)
+
+
+@app.route('/user', methods=['DELETE'])
+def delete_user():
+    json = request.get_json()
+    token = json['token']
+    username = decode_token(token)
+    user = User.objects(username=username).first()
+    user.delete()
+
+
+@app.route('/user/staff', methods=['POST'])
+def create_staff():
+    json = request.get_json()
+    token = json['token']
+    cur_user = User.objects(username=decode_token(token)).first()
+    if cur_user.is_admin:
+        company = Company.objects(name=json['name']).first()
+        user = User.objects(username=json['username']).first()
+        user.staff = company
+        return ''
+    else:
+        return '', 403
 
 
 if __name__ == '__main__':

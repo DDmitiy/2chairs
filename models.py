@@ -10,6 +10,14 @@ class Company(mongoengine.Document):
     cities = mongoengine.ListField(mongoengine.StringField(), required=True)
 
 
+class User(mongoengine.Document):
+    username = mongoengine.StringField(required=True, unique=True)
+    password = mongoengine.StringField(required=True)
+    is_admin = mongoengine.BooleanField()
+    staff = mongoengine.ReferenceField(Company)
+    mail = mongoengine.EmailField(required=True, unique=True)
+
+
 class Furniture(mongoengine.Document):
     seller = mongoengine.ReferenceField(Company)
     name = mongoengine.StringField(required=True)
