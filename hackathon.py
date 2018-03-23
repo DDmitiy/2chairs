@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, send_file, request
-from models import Company, Furniture, User
+from models import Company, Furniture
 from uuid import uuid4
 from hashlib import md5
 import jwt
@@ -11,13 +11,19 @@ TOKEN_INVALID = 1
 
 def encode_token(username):
     payload = {
-        'username': username
+        'username': username,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=6),
+        'iat': datetime.datetime.utcnow()
     }
     return jwt.encode(
         payload,
         app.config.get('SECRET_KEY'),
         algorithm='HS256'
     )
+
+
+def to_md5(password):
+    return md5(password.encode('utf-8')).hexdigest()
 
 
 def decode_token(token):
@@ -40,79 +46,91 @@ app = create_app()
 
 @app.route('/companies', methods=['GET'])
 def get_companies():
-    response = {'companies': []}
-    for comp in Company.objects:
-        response['companies'].append({
-            'name': comp.name,
-            'mail': comp.mail,
-            'cities': comp.cities
-        })
+    response = {
+        'companies': [{
+            'name': c.company_name,
+            'cities': c.cities
+        } for c in Company.objects]
+    }
     return jsonify(response)
 
 
-@app.route('/company/<string:name>', methods=['GET'])
+@app.route('/companies/<string:name>', methods=['GET'])
 def get_company(name):
-    comp = Company.objects(name=name).first()
-    response = {'companies': []}
-    response['companies'].append({
-        'name': comp.name,
-        'mail': comp.mail,
-        'cities': comp.cities
-    })
+    c = Company.objects(name=name).first()
+    response = {
+        'company': {
+            'name': c.company_name,
+            'cities': c.cities
+        }}
     return jsonify(response)
 
 
-@app.route('/company', methods=['POST'])
-def create_company():
-    json = request.get_json()
-    token = json['token']
-    username = decode_token(token)
-    user = User.objects(username=username).first()
-    if user.is_admin:
-        comp = Company(name=json['name'])
-        comp.mail = json['mail']
-        comp.cities = json['cities']
-        comp.save()
-        return ''
+@app.route('/api/register', methods=['POST'])
+def new_company():
+    json = request.json
+    username = json['username']
+    company_name = json['companyname']
+    password = json['password']
+    cities = json['cities']
+    company = Company(name=company_name)
+    company.username = username
+    company.password = to_md5(password)
+    company.cities = cities
+    company.save()
+    return encode_token(username)
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    json = request.json
+    username = json['username']
+    password = json['password']
+    company = Company.objects(username=username, password=to_md5(password)).first()
+    if company:
+        return encode_token(username)
     else:
-        return '', 403
+        return '', 400
 
 
-@app.route('/furniture', methods=['GET'])
+@app.route('/api/furniture', methods=['GET'])
 def all_furniture():
-    response = {'furniture': []}
-    for furn in Furniture.objects:
-        response['furniture'].append({
-            'name': furn.name,
-            'price': furn.price,
-            'seller': furn.seller,
-            'uuid': furn.uuid
-        })
+    response = {'furniture':
+        [{
+            'seller': f.seller.companyname,
+            'name': f.name,
+            'price': f.price,
+            'uuid': str(f.uuid)
+        } for f in Furniture.objects
+        ]
+    }
     return jsonify(response)
 
 
-@app.route('/furniture/<uuid:_id>', methods=['GET'])
+@app.route('/api/furniture/<uuid:_id>', methods=['GET'])
 def furniture(_id):
-    furn = Furniture.objects(uuid=_id).first()
-    response = {'furniture': []}
-    response['furniture'].append({
-        'name': furn.name,
-        'price': furn.price,
-        'seller': furn.seller,
-        'uuid': furn.uuid
-    })
+    f = Furniture.objects(uuid=_id).first()
+    response = {'furniture': {
+        'seller': f.seller.companyname,
+        'name': f.name,
+        'price': f.price,
+        'uuid': str(f.uuid)
+    }}
     return jsonify(response)
 
 
-@app.route('/furniture', methods=['POST'])
-def post_furniture():
+@app.route('/api/furniture/new', methods=['POST'])
+def new_furniture():
     files = request.files
     texture = files['texture']
     photo = files['photo']
     json = request.get_json()
-    seller = Company.objects(name=json['seller']).first()
-    furn = Furniture(seller=seller)
+    username = decode_token(json['token'])
+    if username is TOKEN_EXPIRED or username is TOKEN_INVALID:
+        return '', 403
     uuid = uuid4()
+    seller = Company.objects(username=username).first()
+    furn = Furniture(seller=seller)
     furn.uuid = uuid
     furn.name = json['name']
     furn.price = json['price']
@@ -128,20 +146,22 @@ def post_furniture():
     })
 
 
-@app.route('/furniture/<uuid:_id>', methods=['DELETE'])
+@app.route('/api/furniture/<uuid:_id>', methods=['DELETE'])
 def delete_furniture(_id):
     json = request.get_json()
-    token = json['token']
-    username = decode_token(token)
-    user = User.objects(username=username).first()
-    company = Company.objects(name=json['company']).first()
-    if company.
+    username = decode_token(json['token'])
+    if username is TOKEN_INVALID or username is TOKEN_EXPIRED:
+        return '', 403
+    company = Company.objects(username=username).first()
     furn = Furniture.objects(uuid=id).first()
-    furn.delete()
-    return ''
+    if furn.seller is company:
+        furn.delete()
+        return ''
+    else:
+        return '', 403
 
 
-@app.route('/furniture/<uuid:_id>/texture', methods=['GET'])
+@app.route('/api/furniture/<uuid:_id>/texture', methods=['GET'])
 def furniture_texture(_id):
     furn = Furniture.objects(uuid=_id).first()
     texture = furn.texture
@@ -150,51 +170,13 @@ def furniture_texture(_id):
                      as_attachment=True)
 
 
-@app.route('/furniture/<uuid:_id>/photo', methods=['GET'])
+@app.route('/api/furniture/<uuid:_id>/photo', methods=['GET'])
 def furniture_photo(_id):
     furn = Furniture.objects(uuid=_id).first()
     photo = furn.photo
     return send_file(photo, mimetype=photo.content_type,
                      attachment_filename=photo.filename,
                      as_attachment=True)
-
-
-@app.route('/user', methods=['POST'])
-def create_user():
-    json = request.get_json()
-    username = json['username']
-    password = json['password']
-    mail = json['mail']
-    user = User(username=username)
-    password = md5(password.encode('utf-8')).hexdigest()
-    user.password = password
-    user.mail = mail
-    user.is_admin = False
-    user.save()
-    return encode_token(username)
-
-
-@app.route('/user', methods=['DELETE'])
-def delete_user():
-    json = request.get_json()
-    token = json['token']
-    username = decode_token(token)
-    user = User.objects(username=username).first()
-    user.delete()
-
-
-@app.route('/user/staff', methods=['POST'])
-def create_staff():
-    json = request.get_json()
-    token = json['token']
-    cur_user = User.objects(username=decode_token(token)).first()
-    if cur_user.is_admin:
-        company = Company.objects(name=json['name']).first()
-        user = User.objects(username=json['username']).first()
-        user.staff = company
-        return ''
-    else:
-        return '', 403
 
 
 if __name__ == '__main__':

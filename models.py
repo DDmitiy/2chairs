@@ -5,17 +5,11 @@ mongoengine.connect('kek')
 
 
 class Company(mongoengine.Document):
-    name = mongoengine.StringField(required=True, unique=True)
+    username = mongoengine.StringField(required=True, unique=True)
+    company_name = mongoengine.StringField(required=True, unique=True)
+    password = mongoengine.StringField(required=True)
     mail = mongoengine.EmailField(required=True, unique=True)
     cities = mongoengine.ListField(mongoengine.StringField(), required=True)
-
-
-class User(mongoengine.Document):
-    username = mongoengine.StringField(required=True, unique=True)
-    password = mongoengine.StringField(required=True)
-    is_admin = mongoengine.BooleanField()
-    staff = mongoengine.ReferenceField(Company)
-    mail = mongoengine.EmailField(required=True, unique=True)
 
 
 class Furniture(mongoengine.Document):
