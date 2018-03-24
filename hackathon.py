@@ -9,7 +9,9 @@ TOKEN_EXPIRED = 0
 TOKEN_INVALID = 1
 
 app = Flask(__name__)
+
 cors = CORS(app, resources={r"/api/*": {"origins": "*"}}, expose_headers=['Content-Disposition'])
+
 
 def encode_token(username):
     payload = {
@@ -19,7 +21,7 @@ def encode_token(username):
     }
     return jwt.encode(
         payload,
-        app.config.get('SECRET_KEY'),
+        'aaa',
         algorithm='HS256'
     )
 
@@ -36,14 +38,6 @@ def decode_token(token):
     except jwt.InvalidTokenError:
         return TOKEN_INVALID
     return payload['username']
-
-
-def create_app():
-    application = Flask(__name__)
-    return application
-
-
-app = create_app()
 
 
 @app.route('/api/companies', methods=['GET'])
@@ -72,16 +66,15 @@ def get_company(name):
 def new_company():
     json = request.json
     name = json['name']
-    company_name = json['companyname']
+    company_name = json['company_name']
     password = json['password']
     cities = json['cities']
-    _id = json['id']
-    file = FileModel(id=_id)
+    company_label = json['company_label']
     company = Company(name=name,
                       company_name=company_name,
                       password=to_md5(password),
                       cities=cities,
-                      label=file).save()
+                      label=company_label).save()
     return encode_token(company.name)
 
 
@@ -161,12 +154,7 @@ def new_furniture():
 
 
 @app.route('/api/files', methods=['POST'])
-def files(token):
-    name = decode_token(token)
-    if name is TOKEN_INVALID or name is TOKEN_EXPIRED:
-        return '', 400
-    if not Company.objects(name=name).first():
-        return '', 400
+def files():
     files = request.files
     file = FileModel()
     file.file.put(files['file'],
@@ -240,4 +228,4 @@ def get_categories():
 
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5001)
+    app.run(host='127.0.0.1', port=5001, debug=True)
