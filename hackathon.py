@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, send_file, request
-from models import Company, Furniture, FileModel
+from models import Company, Furniture, FileModel, Category
 from hashlib import md5
 import jwt
 import datetime
@@ -48,7 +48,7 @@ def get_companies():
     response = {
         'companies': [{
             'name': c.company_name,
-            'cities': c.cities
+            'label': "/api/company/%s/label" % c.company_name
         } for c in Company.objects]
     }
     return jsonify(response)
@@ -60,7 +60,7 @@ def get_company(name):
     response = {
         'company': {
             'name': c.company_name,
-            'cities': c.cities
+            'label': "/api/company/%s/label" % c.company_name
         }}
     return jsonify(response)
 
@@ -72,10 +72,13 @@ def new_company():
     company_name = json['companyname']
     password = json['password']
     cities = json['cities']
+    _id = json['id']
+    file = FileModel(id=_id)
     company = Company(name=name,
                       company_name=company_name,
                       password=to_md5(password),
-                      cities=cities).save()
+                      cities=cities,
+                      label=file).save()
     return encode_token(company.name)
 
 
@@ -93,15 +96,13 @@ def login():
 
 @app.route('/api/furniture', methods=['GET'])
 def all_furniture():
-    response = {'furniture':
-        [
+    response = {'furniture': [
             {
-            'seller': f.seller.company_name,
-            'name': f.name,
-            'price': f.price,
-            'preview_url': "/api/furniture/%s/preview" % str(f.id),
-            'model_url': "/api/furniture/%s/model" % str(f.id),
-            'id': str(f.id)
+                'name': f.name,
+                'price': f.price,
+                'preview_url': "/api/furniture/%s/preview" % str(f.id),
+                'model_url': "/api/furniture/%s/model" % str(f.id),
+                'id': str(f.id)
             } for f in Furniture.objects
         ]
     }
@@ -112,7 +113,6 @@ def all_furniture():
 def furniture(_id):
     f = Furniture.objects(id=_id).first()
     response = {'furniture': {
-        'seller': f.seller.company_name,
         'name': f.name,
         'price': f.price,
         'preview_url': "/api/furniture/%s/preview" % str(f.id),
@@ -130,18 +130,30 @@ def new_furniture():
     preview_file = FileModel(id=preview_id).objects.first()
     graphic_file = FileModel(id=graphic_model_id).objects.first()
     token = json['token']
+    category = json['category']
+    cat = Category.objects(name=category).first()
+    if not cat:
+        cat = Category(name=category).save()
     name = decode_token(token)
     if name is TOKEN_EXPIRED and name is TOKEN_INVALID:
         return '', 400
     company = Company.objects(name=name).first()
+    company.categories.append(cat)  # FIXME all mongoengine queries
+    company.save()
     if not company:
         return '', 400
     furn = Furniture(seller=company,
                      name=json['name'],
-                     category=json['category'],
+                     category=cat,
                      price=json['price'],
                      graphic_model=graphic_file,
-                     preview_file=preview_file).save()
+                     preview_file=preview_file,
+                     ).save()
+    company.furniture.append(furn)
+    company.save()
+    cat.companies.append(company)
+    cat.furniture.append(furn)
+    cat.save()
     return jsonify({'id': str(furn.id)}), 201
 
 
@@ -198,17 +210,27 @@ def furniture_model(_id):
                      as_attachment=True)
 
 
+@app.route('/api/company/<string:companyname>/label', methods=['GET'])
+def company_label(companyname):
+    company = Company.objects(company_name=companyname).first()
+    if not company:
+        return '', 404
+    label = company.label.file
+    return send_file(label, mimetype=label.content_type,
+                     attachment_filename=label.filename,
+                     as_attachment=True)
+
+
 @app.route('/api/categories', methods=['GET'])
 def get_categories():
-    json = request.json
-    name = json['name']
+    name = request.args.get('name')
     company = Company.objects(name=name).first()
     response = {'categories': []}
     for cat in company.categories:
-        furn = Furniture.objects(seller=company, category=cat).first()
+        furn = cat.furniture.first()
         if furn:
             response['categories'].append({
-                'category': cat,
+                'category': cat.name,
                 'preview_url': "/api/furniture/%s/preview" % str(furn.id)
             })
     return jsonify(response)
