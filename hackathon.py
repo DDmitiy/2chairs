@@ -155,9 +155,10 @@ def new_furniture():
 
 @app.route('/api/files', methods=['POST'])
 def files():
-    files = request.files
+    if not request.files['file']:
+        return '', 400
     file = FileModel()
-    file.file.put(files['file'],
+    file.file.put(request.files['file'],
                   content_type=files['file'].content_type,
                   filename=files['file'].filename)
     file.save()
