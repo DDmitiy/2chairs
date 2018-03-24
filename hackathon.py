@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, send_file, request
-from models import Company, Furniture
-from uuid import uuid4
+from models import Company, Furniture, FileModel
 from hashlib import md5
 import jwt
 import datetime
@@ -44,7 +43,7 @@ def create_app():
 app = create_app()
 
 
-@app.route('/companies', methods=['GET'])
+@app.route('/api/companies', methods=['GET'])
 def get_companies():
     response = {
         'companies': [{
@@ -55,7 +54,7 @@ def get_companies():
     return jsonify(response)
 
 
-@app.route('/companies/<string:name>', methods=['GET'])
+@app.route('/api/company/<string:name>', methods=['GET'])
 def get_company(name):
     c = Company.objects(name=name).first()
     response = {
@@ -66,7 +65,7 @@ def get_company(name):
     return jsonify(response)
 
 
-@app.route('/api/register', methods=['POST'])
+@app.route('/api/auth/register', methods=['POST'])
 def new_company():
     json = request.json
     name = json['name']
@@ -77,8 +76,7 @@ def new_company():
                       company_name=company_name,
                       password=to_md5(password),
                       cities=cities).save()
-    company.save()
-    return encode_token(name)
+    return encode_token(company.name)
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -96,64 +94,81 @@ def login():
 @app.route('/api/furniture', methods=['GET'])
 def all_furniture():
     response = {'furniture':
-        [{
-            'seller': f.seller.companyname,
+        [
+            {
+            'seller': f.seller.company_name,
             'name': f.name,
             'price': f.price,
-            'uuid': str(f.uuid)
-        } for f in Furniture.objects
+            'preview_url': "/api/furniture/%s/preview" % str(f.id),
+            'model_url': "/api/furniture/%s/model" % str(f.id),
+            'id': str(f.id)
+            } for f in Furniture.objects
         ]
     }
     return jsonify(response)
 
 
-@app.route('/api/furniture/<uuid:_id>', methods=['GET'])
+@app.route('/api/furniture/<string:_id>', methods=['GET'])
 def furniture(_id):
-    f = Furniture.objects(uuid=_id).first()
+    f = Furniture.objects(id=_id).first()
     response = {'furniture': {
-        'seller': f.seller.companyname,
+        'seller': f.seller.company_name,
         'name': f.name,
         'price': f.price,
-        'uuid': str(f.uuid)
+        'preview_url': "/api/furniture/%s/preview" % str(f.id),
+        'model_url': "/api/furniture/%s/model" % str(f.id),
+        'id': str(f.id)
     }}
     return jsonify(response)
 
 
 @app.route('/api/furniture', methods=['POST'])
 def new_furniture():
-    files = request.files
-    texture = files['texture']
-    photo = files['photo']
-    json = request.get_json()
-    name = decode_token(json['token'])
-    if name is TOKEN_EXPIRED or name is TOKEN_INVALID:
-        return '', 403
-    uuid = uuid4()
-    seller = Company.objects(name=name).first()
-    furn = Furniture(seller=seller,
-                     uuid=uuid,
+    json = request.json
+    preview_id = json['preview']
+    graphic_model_id = json['model']
+    preview_file = FileModel(id=preview_id).objects.first()
+    graphic_file = FileModel(id=graphic_model_id).objects.first()
+    token = json['token']
+    name = decode_token(token)
+    if name is TOKEN_EXPIRED and name is TOKEN_INVALID:
+        return '', 400
+    company = Company.objects(name=name).first()
+    if not company:
+        return '', 400
+    furn = Furniture(seller=company,
                      name=json['name'],
-                     price=json['price'])
-    furn.texture.put(texture,
-                     content_type=texture.content_type,
-                     filename=texture.filename)
-    furn.photo.put(photo,
-                   content_type=photo.content_type,
-                   filename=photo.filename)
-    furn.save()
-    return jsonify({
-        'uuid': str(uuid)
-    })
+                     category=json['category'],
+                     price=json['price'],
+                     graphic_model=graphic_file,
+                     preview_file=preview_file).save()
+    return jsonify({'id': str(furn.id)}), 201
 
 
-@app.route('/api/furniture/<uuid:_id>', methods=['DELETE'])
+@app.route('/api/furniture/files/<string:token>', methods=['POST'])
+def files_furniture(token):
+    name = decode_token(token)
+    if name is TOKEN_INVALID or name is TOKEN_EXPIRED:
+        return '', 400
+    if not Company.objects(name=name).first():
+        return '', 400
+    files = request.files
+    file = FileModel()
+    file.file.put(files['file'],
+                  content_type=files['file'].content_type,
+                  filename=files['file'].filename)
+    file.save()
+    return jsonify({'id': str(file.id)})
+
+
+@app.route('/api/furniture/<string:_id>', methods=['DELETE'])
 def delete_furniture(_id):
     json = request.get_json()
     name = decode_token(json['token'])
     if name is TOKEN_INVALID or name is TOKEN_EXPIRED:
         return '', 403
     company = Company.objects(name=name).first()
-    furn = Furniture.objects(uuid=id).first()
+    furn = Furniture.objects(id=id).first()
     if furn.seller is company:
         furn.delete()
         return ''
@@ -161,33 +176,41 @@ def delete_furniture(_id):
         return '', 403
 
 
-@app.route('/api/furniture/<uuid:_id>/texture', methods=['GET'])
-def furniture_texture(_id):
-    furn = Furniture.objects(uuid=_id).first()
-    texture = furn.texture
-    return send_file(texture, mimetype=texture.content_type,
-                     attachment_filename=texture.filename,
+@app.route('/api/furniture/<string:_id>/preview', methods=['GET'])
+def furniture_preview(_id):
+    furn = Furniture.objects(id=_id).first()
+    if not furn:
+        return '', 404
+    preview = furn.preview.file
+    return send_file(preview, mimetype=preview.content_type,
+                     attachment_filename=preview.filename,
                      as_attachment=True)
 
 
-@app.route('/api/furniture/<uuid:_id>/photo', methods=['GET'])
-def furniture_photo(_id):
-    furn = Furniture.objects(uuid=_id).first()
-    photo = furn.photo
-    return send_file(photo, mimetype=photo.content_type,
-                     attachment_filename=photo.filename,
+@app.route('/api/furniture/<string:_id>/model', methods=['GET'])
+def furniture_model(_id):
+    furn = Furniture.objects(id=_id).first()
+    if not furn:
+        return '', 404
+    model = furn.graphic_model.file
+    return send_file(model, mimetype=model.content_type,
+                     attachment_filename=model.filename,
                      as_attachment=True)
 
 
-@app.route('/categories', methods=['GET'])
+@app.route('/api/categories', methods=['GET'])
 def get_categories():
     json = request.json
     name = json['name']
     company = Company.objects(name=name).first()
-    response = {}
+    response = {'categories': []}
     for cat in company.categories:
         furn = Furniture.objects(seller=company, category=cat).first()
-        response[cat] = "/api/furniture/%s/photo" % str(furn.uuid)
+        if furn:
+            response['categories'].append({
+                'category': cat,
+                'preview_url': "/api/furniture/%s/preview" % str(furn.id)
+            })
     return jsonify(response)
 
 

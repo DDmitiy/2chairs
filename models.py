@@ -12,11 +12,14 @@ class Company(mongoengine.Document):
     cities = mongoengine.ListField(mongoengine.StringField(), required=True)
 
 
+class FileModel(mongoengine.Document):
+    file = mongoengine.FileField(required=True)
+
+
 class Furniture(mongoengine.Document):
     seller = mongoengine.ReferenceField(Company)
     name = mongoengine.StringField(required=True)
     category = mongoengine.StringField(required=True)
     price = mongoengine.IntField(required=True)
-    texture = mongoengine.FileField()
-    photo = mongoengine.FileField()
-    uuid = mongoengine.UUIDField(required=True)
+    graphic_model = mongoengine.ReferenceField(FileModel)
+    preview = mongoengine.ReferenceField(FileModel)
