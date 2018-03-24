@@ -157,7 +157,7 @@ def new_furniture():
     return jsonify({'id': str(furn.id)}), 201
 
 
-@app.route('/api/files/<string:token>', methods=['POST'])
+@app.route('/api/files', methods=['POST'])
 def files(token):
     name = decode_token(token)
     if name is TOKEN_INVALID or name is TOKEN_EXPIRED:
