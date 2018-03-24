@@ -69,26 +69,26 @@ def get_company(name):
 @app.route('/api/register', methods=['POST'])
 def new_company():
     json = request.json
-    username = json['username']
+    name = json['name']
     company_name = json['companyname']
     password = json['password']
     cities = json['cities']
-    company = Company(name=company_name)
-    company.username = username
-    company.password = to_md5(password)
-    company.cities = cities
+    company = Company(name=name,
+                      company_name=company_name,
+                      password=to_md5(password),
+                      cities=cities).save()
     company.save()
-    return encode_token(username)
+    return encode_token(name)
 
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     json = request.json
-    username = json['username']
+    name = json['name']
     password = json['password']
-    company = Company.objects(username=username, password=to_md5(password)).first()
+    company = Company.objects(name=name, password=to_md5(password)).first()
     if company:
-        return encode_token(username)
+        return encode_token(name)
     else:
         return '', 400
 
@@ -119,21 +119,21 @@ def furniture(_id):
     return jsonify(response)
 
 
-@app.route('/api/furniture/new', methods=['POST'])
+@app.route('/api/furniture', methods=['POST'])
 def new_furniture():
     files = request.files
     texture = files['texture']
     photo = files['photo']
     json = request.get_json()
-    username = decode_token(json['token'])
-    if username is TOKEN_EXPIRED or username is TOKEN_INVALID:
+    name = decode_token(json['token'])
+    if name is TOKEN_EXPIRED or name is TOKEN_INVALID:
         return '', 403
     uuid = uuid4()
-    seller = Company.objects(username=username).first()
-    furn = Furniture(seller=seller)
-    furn.uuid = uuid
-    furn.name = json['name']
-    furn.price = json['price']
+    seller = Company.objects(name=name).first()
+    furn = Furniture(seller=seller,
+                     uuid=uuid,
+                     name=json['name'],
+                     price=json['price'])
     furn.texture.put(texture,
                      content_type=texture.content_type,
                      filename=texture.filename)
@@ -149,10 +149,10 @@ def new_furniture():
 @app.route('/api/furniture/<uuid:_id>', methods=['DELETE'])
 def delete_furniture(_id):
     json = request.get_json()
-    username = decode_token(json['token'])
-    if username is TOKEN_INVALID or username is TOKEN_EXPIRED:
+    name = decode_token(json['token'])
+    if name is TOKEN_INVALID or name is TOKEN_EXPIRED:
         return '', 403
-    company = Company.objects(username=username).first()
+    company = Company.objects(name=name).first()
     furn = Furniture.objects(uuid=id).first()
     if furn.seller is company:
         furn.delete()
@@ -177,6 +177,18 @@ def furniture_photo(_id):
     return send_file(photo, mimetype=photo.content_type,
                      attachment_filename=photo.filename,
                      as_attachment=True)
+
+
+@app.route('/categories', methods=['GET'])
+def get_categories():
+    json = request.json
+    name = json['name']
+    company = Company.objects(name=name).first()
+    response = {}
+    for cat in company.categories:
+        furn = Furniture.objects(seller=company, category=cat).first()
+        response[cat] = "/api/furniture/%s/photo" % str(furn.uuid)
+    return jsonify(response)
 
 
 if __name__ == '__main__':
