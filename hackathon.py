@@ -161,15 +161,11 @@ def new_furniture():
 
 
 @app.route('/api/files', methods=['POST'])
-def files(token):
-    name = decode_token(token)
-    if name is TOKEN_INVALID or name is TOKEN_EXPIRED:
+def files():
+    if not request.files['file']:
         return '', 400
-    if not Company.objects(name=name).first():
-        return '', 400
-    files = request.files
     file = FileModel()
-    file.file.put(files['file'],
+    file.file.put(request.files['file'],
                   content_type=files['file'].content_type,
                   filename=files['file'].filename)
     file.save()
