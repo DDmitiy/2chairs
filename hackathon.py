@@ -1,12 +1,15 @@
 from flask import Flask, jsonify, send_file, request
 from models import Company, Furniture, FileModel, Category
 from hashlib import md5
+from flask_cors import CORS
 import jwt
 import datetime
 
 TOKEN_EXPIRED = 0
 TOKEN_INVALID = 1
 
+app = Flask(__name__)
+cors = CORS(app, resources={r"/api/*": {"origins": "*"}}, expose_headers=['Content-Disposition'])
 
 def encode_token(username):
     payload = {
