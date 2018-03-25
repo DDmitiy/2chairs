@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, send_file, request
 from models import Company, Furniture, FileModel, Category
 from hashlib import md5
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import jwt
 import datetime
 
@@ -63,6 +63,7 @@ def get_company(name):
 
 
 @app.route('/api/auth/register', methods=['POST'])
+@cross_origin()
 def new_company():
     json = request.json
     name = json['name']
