@@ -80,6 +80,7 @@ def new_company():
 
 
 @app.route('/api/auth/login', methods=['POST'])
+@cross_origin()
 def login():
     json = request.json
     name = json['name']
@@ -107,6 +108,7 @@ def all_furniture():
 
 
 @app.route('/api/furniture/<string:_id>', methods=['GET'])
+@cross_origin()
 def furniture(_id):
     f = Furniture.objects(id=_id).first()
     response = {'furniture': {
@@ -120,6 +122,7 @@ def furniture(_id):
 
 
 @app.route('/api/furniture', methods=['POST'])
+@cross_origin()
 def new_furniture():
     json = request.json
     preview_id = json['preview']
@@ -155,18 +158,20 @@ def new_furniture():
 
 
 @app.route('/api/files', methods=['POST'])
+@cross_origin()
 def files():
     if not request.files['file']:
         return '', 400
     file = FileModel()
     file.file.put(request.files['file'],
-                  content_type=files['file'].content_type,
-                  filename=files['file'].filename)
+                  content_type=request.files['file'].content_type,
+                  filename=request.files['file'].filename)
     file.save()
     return jsonify({'id': str(file.id)})
 
 
 @app.route('/api/furniture/<string:_id>', methods=['DELETE'])
+@cross_origin()
 def delete_furniture(_id):
     json = request.get_json()
     name = decode_token(json['token'])
@@ -182,6 +187,7 @@ def delete_furniture(_id):
 
 
 @app.route('/api/furniture/<string:_id>/preview', methods=['GET'])
+@cross_origin()
 def furniture_preview(_id):
     furn = Furniture.objects(id=_id).first()
     if not furn:
@@ -193,6 +199,7 @@ def furniture_preview(_id):
 
 
 @app.route('/api/furniture/<string:_id>/model', methods=['GET'])
+@cross_origin()
 def furniture_model(_id):
     furn = Furniture.objects(id=_id).first()
     if not furn:
@@ -215,6 +222,7 @@ def company_label(companyname):
 
 
 @app.route('/api/categories', methods=['GET'])
+@cross_origin()
 def get_categories():
     name = request.args.get('name')
     company = Company.objects(name=name).first()
